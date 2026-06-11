@@ -1039,7 +1039,12 @@ if __name__ == '__main__':
     export_xml = re.sub('[ﬁ]', 'fi', export_xml)    # ligature fi
     export_xml = re.sub('[…]', '...', export_xml)   # horizontal ellipsis
     export_xml = re.sub('[™]', '', export_xml)      # Trademark
-    export_xml = re.sub('[¼]', '1/4', export_xml)   # fractions
+    export_xml = re.sub('([0-9])¼', r'\1 1/4', export_xml)   # fractions
+    export_xml = re.sub('([0-9])½', r'\1 1/2', export_xml)
+    export_xml = re.sub('([0-9])¾', r'\1 3/4', export_xml)
+    export_xml = re.sub('([0-9])⅓', r'\1 1/3', export_xml)
+    export_xml = re.sub('([0-9])⅔', r'\1 2/3', export_xml)
+    export_xml = re.sub('[¼]', '1/4', export_xml)
     export_xml = re.sub('[½]', '1/2', export_xml)
     export_xml = re.sub('[¾]', '3/4', export_xml)
     export_xml = re.sub('[⅓]', '1/3', export_xml)

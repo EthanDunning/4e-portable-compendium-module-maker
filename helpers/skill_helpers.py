@@ -134,29 +134,98 @@ def create_list(items_in):
     return xml_out
 
 
-def create_flavor_list(tag_in):
-    parsed_tag = BeautifulSoup(str(tag_in), features="html.parser").find(tag_in.name)
+def looks_like_list_item(text_in):
+    text_clean = re.sub(r'</?[^>]+>', '', text_in).strip()
 
-    for img_tag in parsed_tag.find_all('img'):
+    return re.search(r'^(Action|DC|Distance Cleared Vertically|Failure|Failure by [0-9]+ or (Less|More)|Keep out of Sight|Keep Quiet|Keep Still|Don[\'’]t Attack|Not Remaining Hidden|Opposed Check|Reaching Something|Remaining Hidden|Result|Running Start|Success):', text_clean) != None
+
+
+def format_text_block(text_in):
+    text_str = normalize_skill_text(text_in)
+
+    if text_str == '':
+        return ''
+    if update_match := re.search(r'^Update \(([^)]*)\)$', text_str):
+        return f'<p><b>Update ({update_match.group(1)})</b></p>'
+    if (text_str.isupper() and len(text_str) <= 80) or text_str in ['High Jump', 'Long Jump', 'Swim']:
+        return f'<p><b>{text_str}</b></p>'
+
+    return f'<p>{text_str}</p>'
+
+
+def create_flavor_content(tag_in):
+    parsed_tag = BeautifulSoup(str(tag_in), features="html.parser").find(tag_in.name)
+    has_bullets = parsed_tag.find('img') != None or '[[BULLET]]' in parsed_tag.get_text()
+
+    for img_tag in parsed_tag.find_all('img', recursive=False):
         img_tag.replace_with(NavigableString('[[BULLET]]'))
-    for br_tag in parsed_tag.find_all('br'):
-        br_tag.replace_with(NavigableString('[[BR]]'))
     for anchor_tag in parsed_tag.find_all('a'):
         anchor_tag.replaceWithChildren()
 
-    text_out = parsed_tag.get_text(' ', strip=False)
-
-    if '[[BULLET]]' not in text_out:
-        return str(clean_skill_tag(tag_in))
-
+    description_parts = []
     list_items = []
-    for item_str in text_out.split('[[BULLET]]')[1:]:
-        item_str = item_str.split('[[BR]]')[0]
-        item_str = normalize_skill_text(item_str)
-        if item_str != '':
-            list_items.append(item_str)
+    line_fragments = []
+    line_is_bullet = False
+    emitted_line = False
 
-    return create_list(list_items)
+    def flush_list():
+        nonlocal list_items
+        if list_items:
+            description_parts.append(create_list(list_items))
+            list_items = []
+
+    def flush_line():
+        nonlocal emitted_line, line_fragments, line_is_bullet
+        line_text = normalize_skill_text(''.join(line_fragments))
+        if line_text != '':
+            if line_is_bullet or (has_bullets and looks_like_list_item(line_text)):
+                list_items.append(line_text)
+            else:
+                flush_list()
+                description_parts.append(format_text_block(line_text))
+            emitted_line = True
+        line_fragments = []
+        line_is_bullet = False
+
+    for tag in parsed_tag.children:
+        if isinstance(tag, NavigableString):
+            tag_text = str(tag)
+            while '[[BULLET]]' in tag_text:
+                before_marker, tag_text = tag_text.split('[[BULLET]]', 1)
+                if before_marker != '':
+                    line_fragments.append(before_marker)
+                    flush_line()
+                else:
+                    flush_line()
+                line_is_bullet = True
+            if tag_text != '':
+                line_fragments.append(tag_text)
+        elif isinstance(tag, Tag):
+            if tag.name == 'br':
+                flush_line()
+            elif tag.name == 'table':
+                flush_line()
+                flush_list()
+                description_parts.append(str(clean_table_tag(tag)))
+            elif tag.name in ['h2', 'h3', 'h4']:
+                flush_line()
+                flush_list()
+                description_parts.append(format_text_block(tag.get_text(' ', strip=True)))
+            elif tag.name == 'p' and 'flavor' in tag.get('class', []):
+                flush_line()
+                flush_list()
+                description_parts.append(create_flavor_content(tag))
+            elif tag.name in ['p', 'ol', 'ul', 'list']:
+                flush_line()
+                flush_list()
+                description_parts.append(str(clean_skill_tag(tag)))
+            else:
+                line_fragments.append(create_inline_fragment(tag))
+
+    flush_line()
+    flush_list()
+
+    return ''.join(description_parts)
 
 
 def create_inline_fragment(tag_in):
@@ -234,7 +303,7 @@ def format_skill_description(detail_div):
         elif tag.name in ['h2', 'h3', 'h4']:
             description_parts.append(f'<p><b>{normalize_skill_text(tag.get_text(" ", strip=True))}</b></p>')
         elif tag.name == 'p' and 'flavor' in tag.get('class', []):
-            description_parts.append(create_flavor_list(tag))
+            description_parts.append(create_flavor_content(tag))
         elif tag.name == 'table':
             description_parts.append(str(clean_table_tag(tag)))
         elif tag.name in ['p', 'ol', 'ul', 'list']:
