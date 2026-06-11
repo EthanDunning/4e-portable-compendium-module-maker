@@ -135,3 +135,6 @@ sql/
 /thumbnail.png
 *.xml
 *.mod
+/Portable Compendium New/
+/.gitignore
+/4e Players Handbook/
